@@ -1,16 +1,35 @@
 #[macro_use] extern crate prettytable;
-use prettytable::{Table, Row, Cell};
-use serde_json::{ Result, Value};
+use prettytable::{Table};
+use serde_json::{Value};
 use std::env;
+use futures::StreamExt;
+use telegram_bot::*;
+
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> Result<(),Error> {
     let args:Vec<String> = env::args().collect();
-    println!("{:?}", args);
+    let token = env::var("TELEGRAM_TOKEN").expect("No se encontro el token");
+    let api = Api::new(token);
+
     if args.len() <= 1 {
         panic!("WOWOWO NO HAY ARGUMENTOS");
     }
     let anime = &args[1];
     let query = format!("https://api.jikan.moe/v3/search/anime?q={}",anime);
+    let mut stream = api.stream();
+    while let Some(update) = stream.next().await {
+        let update = update?;
+        if let UpdateKind::Message(message) = update.kind {
+            if let MessageKind::Text { ref data, .. } = message.kind {
+                println!("<{}>: {}", &message.from.first_name, data);
+                api.send(message.text_reply(format!(
+                    "Hi, {}! You just wrote '{}'",
+                    &message.from.first_name, data
+                )))
+                .await?;
+            }
+        }
+    }
     let resp = reqwest::get(&query)
         .await
         .unwrap()
@@ -18,10 +37,10 @@ async fn main() -> Result<()> {
         .await
         .unwrap();
 
-    let cop : Value = serde_json::from_str(&resp)?;
+    let copi = serde_json::from_str(&resp);
+    let cop :Value=copi.unwrap();
     let mut table  = Table::new();
     table.add_row(row![FR=>"Tittle", "Episodes", "Airing"]);
-    //println!("{}", cop["results"][2]["title"]);
     for x in 1..=3{
         table.add_row(row![FY => cop["results"][x]["title"],
             cop["results"][x]["episodes"],
@@ -29,5 +48,5 @@ async fn main() -> Result<()> {
         ]);
     }
       table.printstd();
-   Ok(())
+    Ok(())
 }
